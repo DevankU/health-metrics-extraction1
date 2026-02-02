@@ -1,0 +1,14 @@
+
+**/build/
+.gradle/
+local.properties
+*.iml
+.idea/
+.DS_Store
+.env
+.env.production.example
+*.md
+.next
+.github
+/node_modules/
+server/node_modules/
