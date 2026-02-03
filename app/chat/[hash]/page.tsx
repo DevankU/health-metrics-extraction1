@@ -1,12 +1,11 @@
 "use client";
 
 import React, { useState, useEffect, useRef, use } from 'react';
-import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import { io, Socket } from 'socket.io-client';
-import type { User } from '@supabase/supabase-js';
 import Peer from 'peerjs';
 import ReactMarkdown from 'react-markdown';
+import { useAuth } from '@/contexts/AuthContext';
 
 // Configuration from environment variables
 const DOCTOR_EMAIL = process.env.NEXT_PUBLIC_DOCTOR_EMAIL || 'devanku411@gmail.com';
@@ -77,7 +76,8 @@ interface VideoParticipant {
 
 export default function MedicalChatPage({ params }: { params: Promise<{ hash: string }> }) {
   const { hash } = use(params);
-  
+  const { user, isLoading: authLoading, logout } = useAuth();
+
   const [socket, setSocket] = useState<Socket | null>(null);
   const [roomId, setRoomId] = useState('');
   const [nickname, setNickname] = useState('');
@@ -109,11 +109,9 @@ export default function MedicalChatPage({ params }: { params: Promise<{ hash: st
     keyFindings: [],
     recommendations: []
   });
-  
+
   // Auth state
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [avatarUrl, setAvatarUrl] = useState<string>('');
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [validatingRoom, setValidatingRoom] = useState(true);
   const [roomError, setRoomError] = useState<string | null>(null);
   const router = useRouter();
@@ -135,31 +133,27 @@ export default function MedicalChatPage({ params }: { params: Promise<{ hash: st
 
   // Check auth and validate room on mount
   useEffect(() => {
-    const supabase = createClient();
-    
-    const checkUserAndValidateRoom = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (!user) {
-        router.push('/auth/login');
-        return;
-      }
-      
-      setUser(user);
-      
+    if (authLoading) return;
+
+    if (!user) {
+      router.push('/auth/login');
+      return;
+    }
+
+    const validateRoom = async () => {
       // Determine role based on email
       const isDoctor = user.email?.toLowerCase() === DOCTOR_EMAIL.toLowerCase() || user.email?.toLowerCase() === 'doctor@demo.com';
       setRole(isDoctor ? 'doctor' : 'patient');
-      
+
       // Set nickname from user metadata or email
-      const fullName = user.user_metadata?.full_name || user.email?.split('@')[0] || 'User';
+      const fullName = user.full_name || user.email?.split('@')[0] || 'User';
       setNickname(fullName);
-      
+
       // Set avatar URL
-      const avatar = user.user_metadata?.avatar_url || 
+      const avatar = user.avatar_url ||
         `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(fullName)}&backgroundColor=${isDoctor ? '10b981' : '3b82f6'}`;
       setAvatarUrl(avatar);
-      
+
       // Validate room access
       try {
         const response = await fetch(`${SERVER_URL}/api/validate-room`, {
@@ -167,42 +161,31 @@ export default function MedicalChatPage({ params }: { params: Promise<{ hash: st
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ roomHash: hash, userEmail: user.email })
         });
-        
+
         const data = await response.json();
-        
+
         if (!data.valid) {
           setRoomError(data.error || 'Invalid room link');
           setValidatingRoom(false);
-          setLoading(false);
           return;
         }
-        
+
         setRoomId(data.roomId);
         setValidatingRoom(false);
-        setLoading(false);
       } catch (error) {
         console.error('Room validation error:', error);
         setRoomError('Could not connect to server');
         setValidatingRoom(false);
-        setLoading(false);
       }
     };
-    
-    checkUserAndValidateRoom();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!session) {
-        router.push('/auth/login');
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, [router, hash]);
+    validateRoom();
+  }, [user, authLoading, router, hash]);
 
   // Connect socket when room is validated
   useEffect(() => {
     if (!roomId || validatingRoom) return;
-    
+
     const newSocket = io(SERVER_URL);
     setSocket(newSocket);
 
@@ -241,7 +224,7 @@ export default function MedicalChatPage({ params }: { params: Promise<{ hash: st
 
     socket.on('chat-message', (message: Message) => {
       setMessages(prev => [...prev, message]);
-      
+
       if (message.isEmergency) {
         setEmergencyMode(true);
       }
@@ -256,7 +239,7 @@ export default function MedicalChatPage({ params }: { params: Promise<{ hash: st
         content: message,
         timestamp: new Date().toISOString()
       };
-      
+
       if (message.isEmergency) {
         setEmergencyMode(true);
       }
@@ -392,7 +375,7 @@ export default function MedicalChatPage({ params }: { params: Promise<{ hash: st
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       setLocalStream(stream);
-      
+
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream;
       }
@@ -464,36 +447,36 @@ export default function MedicalChatPage({ params }: { params: Promise<{ hash: st
       if (!isScreenSharing) {
         const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
         const screenTrack = screenStream.getVideoTracks()[0];
-        
+
         if (localStream) {
           const videoTrack = localStream.getVideoTracks()[0];
           localStream.removeTrack(videoTrack);
           localStream.addTrack(screenTrack);
-          
+
           if (localVideoRef.current) {
             localVideoRef.current.srcObject = localStream;
           }
         }
-        
+
         screenTrack.onended = () => {
           setIsScreenSharing(false);
         };
-        
+
         setIsScreenSharing(true);
       } else {
         const videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
         const videoTrack = videoStream.getVideoTracks()[0];
-        
+
         if (localStream) {
           const screenTrack = localStream.getVideoTracks()[0];
           localStream.removeTrack(screenTrack);
           localStream.addTrack(videoTrack);
-          
+
           if (localVideoRef.current) {
             localVideoRef.current.srcObject = localStream;
           }
         }
-        
+
         setIsScreenSharing(false);
       }
     } catch (error) {
@@ -519,7 +502,7 @@ export default function MedicalChatPage({ params }: { params: Promise<{ hash: st
     const file = e.target.files?.[0];
     if (file) {
       setSelectedFile(file);
-      
+
       if (file.type.startsWith('image/')) {
         const reader = new FileReader();
         reader.onloadend = () => {
@@ -583,8 +566,7 @@ export default function MedicalChatPage({ params }: { params: Promise<{ hash: st
   };
 
   const handleSignOut = async () => {
-    const supabase = createClient();
-    await supabase.auth.signOut();
+    await logout();
     router.push('/auth/login');
   };
 
@@ -624,7 +606,7 @@ export default function MedicalChatPage({ params }: { params: Promise<{ hash: st
   const getStatusColor = (status: string) => {
     switch (status?.toLowerCase()) {
       case 'normal': return 'text-emerald-600';
-      case 'elevated': 
+      case 'elevated':
       case 'high': return 'text-orange-600';
       case 'critical': return 'text-red-600';
       case 'low': return 'text-blue-600';
@@ -660,7 +642,7 @@ export default function MedicalChatPage({ params }: { params: Promise<{ hash: st
 
         {isImage && (
           <div className="relative group mt-2">
-            <img 
+            <img
               src={fullUrl || "/placeholder.svg"}
               alt={fileData.name}
               className="max-w-xs max-h-96 rounded-2xl cursor-pointer hover:opacity-95 transition-all shadow-lg object-contain"
@@ -678,7 +660,7 @@ export default function MedicalChatPage({ params }: { params: Promise<{ hash: st
                 {isPDF ? 'PDF Document' : 'Document'}
               </p>
             </div>
-            <a 
+            <a
               href={fullUrl}
               target="_blank"
               rel="noopener noreferrer"
@@ -695,7 +677,7 @@ export default function MedicalChatPage({ params }: { params: Promise<{ hash: st
   };
 
   // Loading state
-  if (loading || validatingRoom) {
+  if (authLoading || validatingRoom) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-[#FFFAF8] via-[#FFF5F2] to-[#FFEBE5] flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
@@ -740,7 +722,7 @@ export default function MedicalChatPage({ params }: { params: Promise<{ hash: st
             </svg>
             <span>Emergency Mode Active: Priority routing enabled.</span>
           </div>
-          <button 
+          <button
             onClick={() => setEmergencyMode(false)}
             className="text-[#c25e48] hover:text-red-700 underline"
           >
@@ -873,11 +855,10 @@ export default function MedicalChatPage({ params }: { params: Promise<{ hash: st
               {/* Mute Button */}
               <button
                 onClick={toggleMute}
-                className={`relative group p-4 rounded-full transition-all ${
-                  isMuted 
-                    ? 'bg-red-500 text-white shadow-lg' 
-                    : 'bg-[#fffaf8] text-[#4a403a] hover:bg-stone-100'
-                }`}
+                className={`relative group p-4 rounded-full transition-all ${isMuted
+                  ? 'bg-red-500 text-white shadow-lg'
+                  : 'bg-[#fffaf8] text-[#4a403a] hover:bg-stone-100'
+                  }`}
                 title={isMuted ? 'Unmute' : 'Mute'}
               >
                 {isMuted ? (
@@ -898,11 +879,10 @@ export default function MedicalChatPage({ params }: { params: Promise<{ hash: st
               {/* Video Toggle Button */}
               <button
                 onClick={toggleVideo}
-                className={`relative group p-4 rounded-full transition-all ${
-                  isVideoOff 
-                    ? 'bg-red-500 text-white shadow-lg' 
-                    : 'bg-[#fffaf8] text-[#4a403a] hover:bg-stone-100'
-                }`}
+                className={`relative group p-4 rounded-full transition-all ${isVideoOff
+                  ? 'bg-red-500 text-white shadow-lg'
+                  : 'bg-[#fffaf8] text-[#4a403a] hover:bg-stone-100'
+                  }`}
                 title={isVideoOff ? 'Turn On Video' : 'Turn Off Video'}
               >
                 {isVideoOff ? (
@@ -922,11 +902,10 @@ export default function MedicalChatPage({ params }: { params: Promise<{ hash: st
               {/* Screen Share Button */}
               <button
                 onClick={toggleScreenShare}
-                className={`relative group p-4 rounded-full transition-all ${
-                  isScreenSharing 
-                    ? 'bg-[#ff9e88] text-white shadow-lg' 
-                    : 'bg-[#fffaf8] text-[#4a403a] hover:bg-stone-100'
-                }`}
+                className={`relative group p-4 rounded-full transition-all ${isScreenSharing
+                  ? 'bg-[#ff9e88] text-white shadow-lg'
+                  : 'bg-[#fffaf8] text-[#4a403a] hover:bg-stone-100'
+                  }`}
                 title={isScreenSharing ? 'Stop Sharing' : 'Share Screen'}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -956,12 +935,12 @@ export default function MedicalChatPage({ params }: { params: Promise<{ hash: st
 
       {/* Expanded Image Modal */}
       {expandedImage && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-8"
           onClick={() => setExpandedImage(null)}
         >
           <img src={expandedImage || "/placeholder.svg"} alt="Expanded" className="max-w-full max-h-full object-contain rounded-2xl" />
-          <button 
+          <button
             className="absolute top-6 right-6 text-white hover:text-gray-300"
             onClick={() => setExpandedImage(null)}
           >
@@ -990,13 +969,13 @@ export default function MedicalChatPage({ params }: { params: Promise<{ hash: st
               </pre>
             </div>
             <div className="p-6 border-t border-stone-200 flex justify-end gap-3">
-              <button 
+              <button
                 onClick={downloadDocumentation}
                 className="bg-emerald-500 hover:bg-emerald-600 text-white px-6 py-2 rounded-full font-semibold transition-all"
               >
                 Download
               </button>
-              <button 
+              <button
                 onClick={() => setShowDocumentation(false)}
                 className="bg-stone-200 hover:bg-stone-300 text-[#4a403a] px-6 py-2 rounded-full font-semibold transition-all"
               >
@@ -1022,7 +1001,7 @@ export default function MedicalChatPage({ params }: { params: Promise<{ hash: st
           <div className="p-4 border-b border-stone-200">
             <div className="flex items-center gap-3">
               <div className="relative">
-                <img 
+                <img
                   src={avatarUrl || "/placeholder.svg"}
                   alt={nickname}
                   className="w-10 h-10 rounded-full object-cover border-2 border-stone-100"
@@ -1062,11 +1041,11 @@ export default function MedicalChatPage({ params }: { params: Promise<{ hash: st
                   {(participants.patient ? 1 : 0) + (participants.doctor ? 1 : 0)}
                 </span>
               </div>
-              
+
               {participants.doctor && (
                 <div className="flex items-center gap-3 px-3 py-2 text-[#4a403a] hover:bg-[#fffaf8] rounded-xl transition-colors mb-1 cursor-pointer">
                   <div className="relative">
-                    <img 
+                    <img
                       src={participants.doctorAvatar || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(participants.doctor)}&backgroundColor=10b981`}
                       alt={participants.doctor}
                       className="w-10 h-10 rounded-full object-cover"
@@ -1083,7 +1062,7 @@ export default function MedicalChatPage({ params }: { params: Promise<{ hash: st
               {participants.patient && (
                 <div className="flex items-center gap-3 px-3 py-3 bg-[#fff5f1] text-[#4a403a] rounded-xl transition-colors border border-[#ff9e88]/20 mb-1">
                   <div className="relative">
-                    <img 
+                    <img
                       src={participants.patientAvatar || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(participants.patient)}&backgroundColor=3b82f6`}
                       alt={participants.patient}
                       className="w-10 h-10 rounded-full object-cover"
@@ -1106,7 +1085,7 @@ export default function MedicalChatPage({ params }: { params: Promise<{ hash: st
           </div>
 
           <div className="p-4 border-t border-stone-200 space-y-2">
-            <button 
+            <button
               onClick={() => router.push('/chat')}
               className="w-full flex items-center justify-center gap-2 bg-[#ff9e88] hover:bg-[#e87c63] text-white h-10 rounded-full text-sm font-bold transition-colors shadow-lg shadow-[#ff9e88]/30"
             >
@@ -1115,7 +1094,7 @@ export default function MedicalChatPage({ params }: { params: Promise<{ hash: st
               </svg>
               Dashboard
             </button>
-            <button 
+            <button
               onClick={handleSignOut}
               className="w-full flex items-center justify-center gap-2 bg-transparent hover:bg-red-50 text-red-500 h-10 rounded-full text-sm font-medium transition-colors"
             >
@@ -1146,7 +1125,7 @@ export default function MedicalChatPage({ params }: { params: Promise<{ hash: st
             <div className="flex items-center gap-2">
               {/* Video Call Buttons */}
               {role === 'doctor' && !videoCallActive && (
-                <button 
+                <button
                   onClick={startVideoCall}
                   className="flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-full text-sm font-bold transition-all shadow-lg"
                 >
@@ -1156,9 +1135,9 @@ export default function MedicalChatPage({ params }: { params: Promise<{ hash: st
                   Start Video
                 </button>
               )}
-              
+
               {videoCallActive && !inVideoCall && (
-                <button 
+                <button
                   onClick={joinVideoCall}
                   className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-full text-sm font-bold transition-all shadow-lg animate-pulse"
                 >
@@ -1181,7 +1160,7 @@ export default function MedicalChatPage({ params }: { params: Promise<{ hash: st
                   <span>{generatingDoc ? 'Generating...' : 'SOAP'}</span>
                 </button>
               )}
-              <button 
+              <button
                 onClick={() => setShowSidebar(!showSidebar)}
                 className="w-9 h-9 rounded-full bg-[#fffaf8] hover:bg-stone-200 flex items-center justify-center text-[#4a403a] transition-colors"
               >
@@ -1239,7 +1218,7 @@ export default function MedicalChatPage({ params }: { params: Promise<{ hash: st
 
               return (
                 <div key={idx} className={`flex ${isOwn ? 'flex-row-reverse' : 'flex-row'} gap-4`}>
-                  <img 
+                  <img
                     src={msg.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(msg.nickname || 'U')}&backgroundColor=ff9e88`}
                     alt={msg.nickname || 'User'}
                     className="w-8 h-8 rounded-full object-cover shrink-0 self-end mb-1"
@@ -1248,11 +1227,10 @@ export default function MedicalChatPage({ params }: { params: Promise<{ hash: st
                     <span className="text-xs text-[#8c817a] mx-1">
                       {msg.nickname || msg.role} - {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </span>
-                    <div className={`p-4 rounded-2xl ${
-                      isOwn 
-                        ? 'bg-[#ff9e88] text-white rounded-br-none' 
-                        : 'bg-white text-[#4a403a] border border-stone-200 rounded-bl-none'
-                    } shadow-sm text-sm leading-relaxed`}>
+                    <div className={`p-4 rounded-2xl ${isOwn
+                      ? 'bg-[#ff9e88] text-white rounded-br-none'
+                      : 'bg-white text-[#4a403a] border border-stone-200 rounded-bl-none'
+                      } shadow-sm text-sm leading-relaxed`}>
                       {!msg.isFile && (
                         <div className="prose prose-sm max-w-none">
                           <ReactMarkdown>{msg.content}</ReactMarkdown>
@@ -1315,7 +1293,7 @@ export default function MedicalChatPage({ params }: { params: Promise<{ hash: st
                     accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png"
                     className="hidden"
                   />
-                  <button 
+                  <button
                     onClick={() => fileInputRef.current?.click()}
                     className="p-2 hover:bg-stone-200 rounded-lg transition-colors"
                     title="Attach File"
@@ -1385,27 +1363,24 @@ export default function MedicalChatPage({ params }: { params: Promise<{ hash: st
         {showSidebar && (
           <aside className="w-[340px] bg-white border-l border-stone-200 flex flex-col flex-shrink-0 overflow-y-auto">
             <div className="flex items-center p-1 m-4 bg-[#fffaf8] rounded-xl">
-              <button 
+              <button
                 onClick={() => setActiveTab('ai')}
-                className={`flex-1 py-1.5 text-xs font-bold rounded-lg text-center transition-all ${
-                  activeTab === 'ai' ? 'bg-white text-[#4a403a] shadow-sm' : 'text-[#8c817a] hover:text-[#4a403a]'
-                }`}
+                className={`flex-1 py-1.5 text-xs font-bold rounded-lg text-center transition-all ${activeTab === 'ai' ? 'bg-white text-[#4a403a] shadow-sm' : 'text-[#8c817a] hover:text-[#4a403a]'
+                  }`}
               >
                 AI Analysis
               </button>
-              <button 
+              <button
                 onClick={() => setActiveTab('files')}
-                className={`flex-1 py-1.5 text-xs font-medium text-center transition-all ${
-                  activeTab === 'files' ? 'bg-white text-[#4a403a] shadow-sm font-bold rounded-lg' : 'text-[#8c817a] hover:text-[#4a403a]'
-                }`}
+                className={`flex-1 py-1.5 text-xs font-medium text-center transition-all ${activeTab === 'files' ? 'bg-white text-[#4a403a] shadow-sm font-bold rounded-lg' : 'text-[#8c817a] hover:text-[#4a403a]'
+                  }`}
               >
                 Files
               </button>
-              <button 
+              <button
                 onClick={() => setActiveTab('info')}
-                className={`flex-1 py-1.5 text-xs font-medium text-center transition-all ${
-                  activeTab === 'info' ? 'bg-white text-[#4a403a] shadow-sm font-bold rounded-lg' : 'text-[#8c817a] hover:text-[#4a403a]'
-                }`}
+                className={`flex-1 py-1.5 text-xs font-medium text-center transition-all ${activeTab === 'info' ? 'bg-white text-[#4a403a] shadow-sm font-bold rounded-lg' : 'text-[#8c817a] hover:text-[#4a403a]'
+                  }`}
               >
                 Info
               </button>
@@ -1430,7 +1405,7 @@ export default function MedicalChatPage({ params }: { params: Promise<{ hash: st
                           </p>
                         </div>
                       )}
-                      
+
                       {healthMetrics.vitals.bloodPressure && healthMetrics.vitals.bloodPressure.systolic > 0 && (
                         <div className="bg-[#fffaf8] p-3 rounded-2xl border border-stone-200">
                           <div className="flex items-center gap-2 mb-2 text-[#8c817a]">
@@ -1475,8 +1450,8 @@ export default function MedicalChatPage({ params }: { params: Promise<{ hash: st
                         {healthMetrics.diagnosis.confidence > 0 && (
                           <>
                             <div className="w-full bg-stone-200 rounded-full h-1.5 mt-1.5">
-                              <div 
-                                className="bg-[#c25e48] h-1.5 rounded-full transition-all" 
+                              <div
+                                className="bg-[#c25e48] h-1.5 rounded-full transition-all"
                                 style={{ width: `${healthMetrics.diagnosis.confidence}%` }}
                               ></div>
                             </div>
@@ -1511,7 +1486,7 @@ export default function MedicalChatPage({ params }: { params: Promise<{ hash: st
                       </div>
                     ) : (
                       files.map((file, idx) => (
-                        <div 
+                        <div
                           key={idx}
                           className="flex items-center gap-3 p-2 rounded-xl hover:bg-[#fffaf8] transition-colors border border-transparent hover:border-stone-200 group cursor-pointer"
                         >
@@ -1524,58 +1499,58 @@ export default function MedicalChatPage({ params }: { params: Promise<{ hash: st
                               {file.uploadedAt ? new Date(file.uploadedAt).toLocaleDateString() : 'Unknown'}
                             </p>
                           </div>
-                          <a 
+                          <a
                             href={`${SERVER_URL}${file.url}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="opacity-0 group-hover:opacity-100 transition-opacity text-[#8c817a] hover:text-[#4a403a]"
                           >
-                          <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                          </svg>
+                            <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                            </svg>
                           </a>
-                          </div>
-                          ))
-                          )}
-                          </div>
-                          </div>
-                          )}
-          {activeTab === 'info' && (
-            <div className="space-y-4">
-              <div className="bg-[#fffaf8] p-4 rounded-2xl border border-stone-200">
-                <h4 className="font-bold text-sm text-[#4a403a] mb-2">Room Information</h4>
-                <div className="space-y-2 text-xs">
-                  <div className="flex justify-between">
-                    <span className="text-[#8c817a]">Room ID</span>
-                    <span className="font-mono text-[#4a403a]">{roomId}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-[#8c817a]">Hash</span>
-                    <span className="font-mono text-[#4a403a] truncate max-w-[150px]">{hash}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-[#8c817a]">Your Role</span>
-                    <span className={`font-bold ${role === 'doctor' ? 'text-emerald-600' : 'text-blue-600'}`}>
-                      {role.charAt(0).toUpperCase() + role.slice(1)}
-                    </span>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
-              </div>
-              
-              <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100">
-                <h4 className="font-bold text-sm text-blue-700 mb-2">Tips</h4>
-                <ul className="text-xs text-blue-600 space-y-1">
-                  <li>Type @ai in chat for AI assistance</li>
-                  <li>Upload reports for auto-analysis</li>
-                  {role === 'doctor' && <li>Use SOAP button for documentation</li>}
-                </ul>
-              </div>
+              )}
+              {activeTab === 'info' && (
+                <div className="space-y-4">
+                  <div className="bg-[#fffaf8] p-4 rounded-2xl border border-stone-200">
+                    <h4 className="font-bold text-sm text-[#4a403a] mb-2">Room Information</h4>
+                    <div className="space-y-2 text-xs">
+                      <div className="flex justify-between">
+                        <span className="text-[#8c817a]">Room ID</span>
+                        <span className="font-mono text-[#4a403a]">{roomId}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-[#8c817a]">Hash</span>
+                        <span className="font-mono text-[#4a403a] truncate max-w-[150px]">{hash}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-[#8c817a]">Your Role</span>
+                        <span className={`font-bold ${role === 'doctor' ? 'text-emerald-600' : 'text-blue-600'}`}>
+                          {role.charAt(0).toUpperCase() + role.slice(1)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100">
+                    <h4 className="font-bold text-sm text-blue-700 mb-2">Tips</h4>
+                    <ul className="text-xs text-blue-600 space-y-1">
+                      <li>Type @ai in chat for AI assistance</li>
+                      <li>Upload reports for auto-analysis</li>
+                      {role === 'doctor' && <li>Use SOAP button for documentation</li>}
+                    </ul>
+                  </div>
+                </div>
+              )}
             </div>
-          )}
-        </div>
-      </aside>
-    )}
-  </div>
-</div>
-);
+          </aside>
+        )}
+      </div>
+    </div>
+  );
 }

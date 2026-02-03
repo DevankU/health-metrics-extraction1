@@ -12,3 +12,4 @@ local.properties
 .github
 /node_modules/
 server/node_modules/
+user-service/node_modules/

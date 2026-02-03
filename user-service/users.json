@@ -1,0 +1,20 @@
+[
+    {
+        "id": "1",
+        "email": "doctor@demo.com",
+        "password": "123456",
+        "role": "doctor",
+        "full_name": "DR",
+        "avatar_url": "https://api.dicebear.com/7.x/initials/svg?seed=Dr%20Biswas&backgroundColor=10b981",
+        "created_at": "2024-01-01T00:00:00.000Z"
+    },
+    {
+        "id": "2",
+        "email": "patient@demo.com",
+        "password": "123456",
+        "role": "patient",
+        "full_name": "patient",
+        "avatar_url": "https://api.dicebear.com/7.x/initials/svg?seed=Rohan%20Das&backgroundColor=3b82f6",
+        "created_at": "2024-01-01T00:00:00.000Z"
+    }
+]

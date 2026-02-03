@@ -21,9 +21,9 @@ const helmet = require("helmet");
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',')
   : ['http://localhost:3000'];
+
 const DOCTOR_EMAIL = process.env.DOCTOR_EMAIL || 'devanku411@gmail.com';
-const RATE_LIMIT_MAX = parseInt(process.env.RATE_LIMIT_MAX) || 10;
-const RATE_LIMIT_WINDOW_MS = parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 6 * 60 * 60 * 1000; // 6 hours
+
 
 const app = express();
 const server = http.createServer(app);
@@ -35,26 +35,6 @@ const io = new Server(server, {
   },
   maxHttpBufferSize: 1e8
 });
-
-// Socket.io rate limiting tracking
-const socketRateLimits = new Map(); // IP -> { count, resetTime }
-
-function checkSocketRateLimit(ip) {
-  const now = Date.now();
-  const limit = socketRateLimits.get(ip);
-
-  if (!limit || now > limit.resetTime) {
-    socketRateLimits.set(ip, { count: 1, resetTime: now + RATE_LIMIT_WINDOW_MS });
-    return true;
-  }
-
-  if (limit.count >= RATE_LIMIT_MAX) {
-    return false;
-  }
-
-  limit.count++;
-  return true;
-}
 
 // PeerJS Server for WebRTC
 const peerServer = ExpressPeerServer(server, {
@@ -99,27 +79,13 @@ app.use(cors({
 }));
 
 // Rate Limiting - 10 requests per IP, retry after 6 hours
-const apiLimiter = rateLimit({
-  windowMs: RATE_LIMIT_WINDOW_MS,
-  max: RATE_LIMIT_MAX,
-  message: {
-    error: 'Too many requests from this IP',
-    message: 'You have exceeded the limit of 10 requests. Please try again after 6 hours.',
-    retryAfter: '6 hours'
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-  // Validate: false to suppress IPv6 warning (we handle it manually)
-  validate: { xForwardedForHeader: false },
-  skip: (req) => {
-    // Skip rate limiting for health checks
-    return req.path === '/health';
-  }
-});
+// Apply rate limiting to API routes - DISABLED
+// app.use('/api', apiLimiter);
+// app.use('/upload', apiLimiter);
 
 // Apply rate limiting to API routes
-app.use('/api', apiLimiter);
-app.use('/upload', apiLimiter);
+// app.use('/api', apiLimiter);
+// app.use('/upload', apiLimiter);
 
 app.use(express.json());
 app.use(express.static(path.resolve("./public")));
