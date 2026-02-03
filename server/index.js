@@ -18,8 +18,8 @@ const rateLimit = require("express-rate-limit");
 const helmet = require("helmet");
 
 // ============ CONFIGURATION ============
-const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS 
-  ? process.env.ALLOWED_ORIGINS.split(',') 
+const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',')
   : ['http://localhost:3000'];
 const DOCTOR_EMAIL = process.env.DOCTOR_EMAIL || 'devanku411@gmail.com';
 const RATE_LIMIT_MAX = parseInt(process.env.RATE_LIMIT_MAX) || 10;
@@ -28,7 +28,7 @@ const RATE_LIMIT_WINDOW_MS = parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 6 * 6
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: { 
+  cors: {
     origin: ALLOWED_ORIGINS.includes('*') ? '*' : ALLOWED_ORIGINS,
     methods: ['GET', 'POST'],
     credentials: true
@@ -42,16 +42,16 @@ const socketRateLimits = new Map(); // IP -> { count, resetTime }
 function checkSocketRateLimit(ip) {
   const now = Date.now();
   const limit = socketRateLimits.get(ip);
-  
+
   if (!limit || now > limit.resetTime) {
     socketRateLimits.set(ip, { count: 1, resetTime: now + RATE_LIMIT_WINDOW_MS });
     return true;
   }
-  
+
   if (limit.count >= RATE_LIMIT_MAX) {
     return false;
   }
-  
+
   limit.count++;
   return true;
 }
@@ -83,7 +83,7 @@ app.use(helmet({
 
 // CORS - Restrict to allowed origins only
 app.use(cors({
-  origin: function(origin, callback) {
+  origin: function (origin, callback) {
     // Allow requests with no origin (health checks, server-to-server, mobile apps)
     if (!origin) {
       return callback(null, true);
@@ -138,10 +138,14 @@ const storage = multer.diskStorage({
   }
 });
 
-const upload = multer({ 
+const upload = multer({
   storage,
   limits: { fileSize: 50 * 1024 * 1024 }
 });
+
+// Auth Routes
+const authRoutes = require('./routes/auth');
+app.use('/api/auth', authRoutes);
 
 // Initialize Groq LLM - Replace with your own API key
 const llm = new ChatGroq({
@@ -207,7 +211,7 @@ const DOCTOR_AI_PROMPT = `You are an AI Medical Assistant helping a DOCTOR. Your
 // Extract health metrics from content
 async function extractHealthMetrics(content, conversationHistory = []) {
   const recentConversation = conversationHistory.slice(-10).map(m => `${m.role}: ${m.content}`).join('\n');
-  
+
   const metricsPrompt = `You are a medical data extraction AI. Extract ALL health metrics, vital signs, lab values, and diagnoses from the following content.
 
 **MEDICAL FILE CONTENT**:
@@ -262,11 +266,11 @@ CRITICAL: Extract REAL data from the content. Do not use placeholder values unle
 
     let jsonContent = response.content.replace(/```json|```|```/g, '').trim();
     jsonContent = jsonContent.replace(/^\s+|\s+$/g, '');
-    
+
     console.log("Raw AI response for metrics:", jsonContent.substring(0, 500));
-    
+
     const metrics = JSON.parse(jsonContent);
-    
+
     if (!metrics.vitals) metrics.vitals = {};
     if (!metrics.diagnosis) {
       metrics.diagnosis = {
@@ -278,13 +282,13 @@ CRITICAL: Extract REAL data from the content. Do not use placeholder values unle
     }
     if (!metrics.keyFindings) metrics.keyFindings = [];
     if (!metrics.recommendations) metrics.recommendations = [];
-    
+
     console.log("Extracted metrics:", JSON.stringify(metrics, null, 2));
     return metrics;
   } catch (error) {
     console.error("Metrics extraction error:", error);
     console.error("Error details:", error.message);
-    
+
     return {
       vitals: {},
       diagnosis: {
@@ -308,7 +312,7 @@ Content: ${content.substring(0, 3000)}
 
 ${previousReports.length > 0 ? `
 **TEMPORAL CONTEXT** (Previous Reports):
-${previousReports.map((r, i) => `Report ${i+1} (${r.date}): ${r.keyFindings}`).join('\n')}
+${previousReports.map((r, i) => `Report ${i + 1} (${r.date}): ${r.keyFindings}`).join('\n')}
 ` : ''}
 
 Provide analysis in this EXACT format:
@@ -347,7 +351,7 @@ Be concise, clinical, and ALWAYS explain the "why" behind findings.`;
 // Temporal Health Intelligence
 function extractTemporalData(room) {
   if (!room.files || room.files.length < 2) return [];
-  
+
   return room.files.map(f => ({
     name: f.name,
     date: f.uploadedAt,
@@ -358,7 +362,7 @@ function extractTemporalData(room) {
 
 async function performTemporalAnalysis(currentContent, fileName, room) {
   const previousReports = extractTemporalData(room);
-  
+
   if (previousReports.length === 0) {
     return await analyzeFileWithXAI(currentContent, fileName, []);
   }
@@ -370,7 +374,7 @@ ${currentContent.substring(0, 2000)}
 
 **HISTORICAL DATA**:
 ${previousReports.map((r, i) => `
-Report ${i+1} - ${new Date(r.date).toLocaleDateString()}:
+Report ${i + 1} - ${new Date(r.date).toLocaleDateString()}:
 ${r.keyFindings}
 `).join('\n')}
 
@@ -397,8 +401,8 @@ Format as structured clinical analysis with temporal context.`;
 // Emergency Detection
 async function detectEmergency(message, userRole) {
   const messageLower = message.toLowerCase();
-  
-  const hasEmergencyKeyword = EMERGENCY_KEYWORDS.some(keyword => 
+
+  const hasEmergencyKeyword = EMERGENCY_KEYWORDS.some(keyword =>
     messageLower.includes(keyword)
   );
 
@@ -428,7 +432,7 @@ Respond ONLY with JSON:
     ]);
 
     const result = JSON.parse(response.content.replace(/```json|```/g, '').trim());
-    
+
     return {
       isEmergency: result.level === "CRITICAL" || result.level === "HIGH",
       level: result.level,
@@ -509,9 +513,9 @@ async function extractTextFromImage(imagePath) {
       .toFile(processedPath);
 
     const { data: { text } } = await Tesseract.recognize(processedPath, 'eng');
-    
-    try { await fs.unlink(processedPath); } catch (e) {}
-    
+
+    try { await fs.unlink(processedPath); } catch (e) { }
+
     console.log("OCR completed, text length:", text.length);
     return text.trim();
   } catch (error) {
@@ -524,7 +528,7 @@ async function extractTextFromImage(imagePath) {
 async function extractFileContent(filePath, mimeType) {
   try {
     console.log("Extracting:", filePath, mimeType);
-    
+
     if (mimeType === "application/pdf") {
       const dataBuffer = await fs.readFile(filePath);
       const pdfData = await pdf(dataBuffer);
@@ -559,7 +563,7 @@ async function generateDocumentSummary(content, fileName, analysis, metrics) {
     fullAnalysis: analysis,
     rawContent: content.substring(0, 1000)
   };
-  
+
   return summary;
 }
 
@@ -570,7 +574,7 @@ async function getAIResponse(roomId, userMessage, userRole, socketId, isFileQuer
 
   // Build document context based on role
   let documentContext = "";
-  
+
   if (room.files && room.files.length > 0) {
     if (userRole === "doctor") {
       // Doctor gets full detailed analysis
@@ -597,7 +601,7 @@ async function getAIResponse(roomId, userMessage, userRole, socketId, isFileQuer
   }
 
   const systemPrompt = userRole === "doctor" ? DOCTOR_AI_PROMPT : PATIENT_AI_PROMPT;
-  
+
   // Filter messages to only show what this role should see
   const roleMessages = room.messages.filter(m => {
     // Show all non-AI messages
@@ -605,7 +609,7 @@ async function getAIResponse(roomId, userMessage, userRole, socketId, isFileQuer
     // For AI messages, only show if no forRole specified or if it matches current role
     return !m.forRole || m.forRole === userRole;
   });
-  
+
   let context = `Room: ${roomId}
 User Role: ${userRole}
 Patient: ${room.patient || "Waiting"}
@@ -638,14 +642,14 @@ ${roleMessages.slice(-5).map(m => `${m.role}: ${m.content}`).join("\n")}`;
 // Create room (Doctor only)
 app.post("/api/create-room", (req, res) => {
   const { doctorEmail, patientEmail } = req.body;
-  
+
   if (!doctorEmail || !patientEmail) {
     return res.status(400).json({ error: "Doctor email and Patient email are required" });
   }
-  
+
   const roomHash = generateRoomHash();
   const roomId = `room_${Date.now()}`;
-  
+
   // Store invitation
   roomInvitations[roomHash] = {
     roomId,
@@ -654,7 +658,7 @@ app.post("/api/create-room", (req, res) => {
     createdAt: new Date().toISOString(),
     videoEnabled: false
   };
-  
+
   // Initialize room
   rooms[roomId] = {
     messages: [],
@@ -669,13 +673,13 @@ app.post("/api/create-room", (req, res) => {
     videoCallActive: false,
     videoParticipants: []
   };
-  
+
   console.log(`Room created: ${roomId} with hash: ${roomHash}`);
   console.log(`Patient invited: ${patientEmail}`);
-  
-  res.json({ 
-    success: true, 
-    roomHash, 
+
+  res.json({
+    success: true,
+    roomHash,
     roomId,
     inviteLink: `/chat/${roomHash}`
   });
@@ -684,24 +688,24 @@ app.post("/api/create-room", (req, res) => {
 // Validate room access
 app.post("/api/validate-room", (req, res) => {
   const { roomHash, userEmail } = req.body;
-  
+
   const invitation = roomInvitations[roomHash];
-  
+
   if (!invitation) {
     return res.status(404).json({ error: "Invalid room link", valid: false });
   }
-  
+
   const email = userEmail?.toLowerCase();
   const isDoctor = email === invitation.doctorEmail;
   const isInvitedPatient = email === invitation.patientEmail;
-  
+
   if (!isDoctor && !isInvitedPatient) {
-    return res.status(403).json({ 
-      error: "You are not authorized to join this room", 
-      valid: false 
+    return res.status(403).json({
+      error: "You are not authorized to join this room",
+      valid: false
     });
   }
-  
+
   res.json({
     valid: true,
     roomId: invitation.roomId,
@@ -714,7 +718,7 @@ app.post("/api/validate-room", (req, res) => {
 // Get doctor's rooms
 app.get("/api/doctor-rooms", (req, res) => {
   const { email } = req.query;
-  
+
   // Return rooms where this email is the doctor
   const doctorRooms = Object.entries(roomInvitations)
     .filter(([_, inv]) => inv.doctorEmail === email?.toLowerCase())
@@ -726,18 +730,18 @@ app.get("/api/doctor-rooms", (req, res) => {
       hasPatientJoined: rooms[inv.roomId]?.patient !== null,
       inviteLink: `/chat/${hash}`
     }));
-  
+
   res.json({ rooms: doctorRooms });
 });
 
 // Get patient's rooms (rooms where they are invited)
 app.get("/api/patient-rooms", (req, res) => {
   const { email } = req.query;
-  
+
   if (!email) {
     return res.status(400).json({ error: "Email is required" });
   }
-  
+
   // Return rooms where this email is the invited patient
   const patientRooms = Object.entries(roomInvitations)
     .filter(([_, inv]) => inv.patientEmail === email?.toLowerCase())
@@ -749,7 +753,7 @@ app.get("/api/patient-rooms", (req, res) => {
       isDoctorOnline: rooms[inv.roomId]?.doctor !== null,
       inviteLink: `/chat/${hash}`
     }));
-  
+
   res.json({ rooms: patientRooms });
 });
 
@@ -757,34 +761,34 @@ app.get("/api/patient-rooms", (req, res) => {
 app.delete("/api/delete-room/:hash", (req, res) => {
   const { hash } = req.params;
   const { doctorEmail } = req.body;
-  
+
   const invitation = roomInvitations[hash];
-  
+
   if (!invitation) {
     return res.status(404).json({ error: "Room not found" });
   }
-  
+
   // Verify doctor ownership
   if (invitation.doctorEmail !== doctorEmail?.toLowerCase()) {
     return res.status(403).json({ error: "Only the doctor who created this room can delete it" });
   }
-  
+
   const roomId = invitation.roomId;
-  
+
   // Disconnect all users in this room
   if (rooms[roomId]) {
     // Notify all connected users
     io.to(roomId).emit("room-deleted", { message: "This consultation room has been deleted by the doctor" });
-    
+
     // Clean up room data
     delete rooms[roomId];
   }
-  
+
   // Remove invitation
   delete roomInvitations[hash];
-  
+
   console.log(`Room deleted: ${roomId} (hash: ${hash})`);
-  
+
   res.json({ success: true, message: "Room deleted successfully" });
 });
 
@@ -806,23 +810,23 @@ app.post("/upload", upload.single("file"), async (req, res) => {
     let analysis = "";
     let metrics = null;
     let documentSummary = null;
-    
+
     if (content && content.length > 20 && !content.includes("no text detected")) {
       console.log("Starting analysis for file:", file.originalname);
-      
+
       if (rooms[roomId]) {
         analysis = await performTemporalAnalysis(content, file.originalname, rooms[roomId]);
-        
+
         console.log("Extracting health metrics from file...");
         metrics = await extractHealthMetrics(content, rooms[roomId].messages);
-        
+
         // Generate document summary for AI context
         documentSummary = await generateDocumentSummary(content, file.originalname, analysis, metrics);
-        
+
         console.log("Metrics extracted successfully:", JSON.stringify(metrics, null, 2));
-        
+
         rooms[roomId].healthMetrics = metrics;
-        
+
         console.log("Broadcasting health metrics to room:", roomId);
         io.to(roomId).emit("health-metrics-updated", { metrics });
       } else {
@@ -848,7 +852,7 @@ app.post("/upload", upload.single("file"), async (req, res) => {
 
     if (rooms[roomId]) {
       rooms[roomId].files.push(fileInfo);
-      
+
       const fileMessage = {
         role: uploadedBy || "User",
         nickname: uploadedBy,
@@ -873,7 +877,7 @@ app.post("/upload", upload.single("file"), async (req, res) => {
           const doctorSocketId = Object.keys(users).find(
             sid => users[sid].roomId === roomId && users[sid].role === "doctor"
           );
-          
+
           if (doctorSocketId && rooms[roomId].doctor) {
             const doctorAiMessage = {
               role: 'AI Assistant',
@@ -882,12 +886,12 @@ app.post("/upload", upload.single("file"), async (req, res) => {
               forRole: 'doctor', // CRITICAL: Mark as doctor-only
               isPrivate: true
             };
-            
+
             // Store in messages with forRole tag
             rooms[roomId].messages.push(doctorAiMessage);
-            
+
             // Send only to doctor
-            io.to(doctorSocketId).emit("ai-message", { 
+            io.to(doctorSocketId).emit("ai-message", {
               message: doctorAiMessage.content,
               isPrivate: true,
               forRole: "doctor"
@@ -902,7 +906,7 @@ app.post("/upload", upload.single("file"), async (req, res) => {
           const patientSocketId = Object.keys(users).find(
             sid => users[sid].nickname === uploadedBy && users[sid].roomId === roomId
           );
-          
+
           if (patientSocketId) {
             const patientAiMessage = {
               role: 'AI Assistant',
@@ -911,12 +915,12 @@ app.post("/upload", upload.single("file"), async (req, res) => {
               forRole: 'patient', // CRITICAL: Mark as patient-only
               isPrivate: true
             };
-            
+
             // Store in messages with forRole tag
             rooms[roomId].messages.push(patientAiMessage);
-            
+
             // Send only to patient
-            io.to(patientSocketId).emit("ai-message", { 
+            io.to(patientSocketId).emit("ai-message", {
               message: patientAiMessage.content,
               isPrivate: true,
               forRole: "patient"
@@ -940,7 +944,7 @@ io.on("connection", async (socket) => {
 
   socket.on("join-room", ({ roomId, nickname, role, avatarUrl, email }) => {
     socket.join(roomId);
-    
+
     if (!rooms[roomId]) {
       rooms[roomId] = {
         messages: [],
@@ -956,7 +960,7 @@ io.on("connection", async (socket) => {
     }
 
     users[socket.id] = { roomId, nickname, role, avatarUrl, email };
-    
+
     if (role === "patient") {
       rooms[roomId].patient = nickname;
       rooms[roomId].patientAvatar = avatarUrl;
@@ -1004,13 +1008,13 @@ io.on("connection", async (socket) => {
       socket.emit("video-error", { message: "Only doctors can start video calls" });
       return;
     }
-    
+
     if (rooms[roomId]) {
       rooms[roomId].videoCallActive = true;
       rooms[roomId].videoParticipants = [];
-      io.to(roomId).emit("video-call-started", { 
+      io.to(roomId).emit("video-call-started", {
         startedBy: user.nickname,
-        roomId 
+        roomId
       });
       console.log(`Video call started in room ${roomId} by ${user.nickname}`);
     }
@@ -1019,31 +1023,31 @@ io.on("connection", async (socket) => {
   socket.on("join-video-call", ({ roomId, peerId }) => {
     const user = users[socket.id];
     if (!user || !rooms[roomId]) return;
-    
+
     // Add to participants
     if (!rooms[roomId].videoParticipants.includes(peerId)) {
       rooms[roomId].videoParticipants.push(peerId);
     }
-    
+
     // Notify others in the room about new video participant
-    socket.to(roomId).emit("user-joined-video", { 
-      peerId, 
+    socket.to(roomId).emit("user-joined-video", {
+      peerId,
       nickname: user.nickname,
-      role: user.role 
+      role: user.role
     });
-    
+
     // Send list of existing participants to the new joiner
-    socket.emit("existing-video-participants", { 
-      participants: rooms[roomId].videoParticipants.filter(id => id !== peerId) 
+    socket.emit("existing-video-participants", {
+      participants: rooms[roomId].videoParticipants.filter(id => id !== peerId)
     });
-    
+
     console.log(`${user.nickname} joined video call with peerId: ${peerId}`);
   });
 
   socket.on("end-video-call", ({ roomId }) => {
     const user = users[socket.id];
     if (!user || user.role !== "doctor") return;
-    
+
     if (rooms[roomId]) {
       rooms[roomId].videoCallActive = false;
       rooms[roomId].videoParticipants = [];
@@ -1055,7 +1059,7 @@ io.on("connection", async (socket) => {
   socket.on("leave-video-call", ({ roomId, peerId }) => {
     const user = users[socket.id];
     if (!user || !rooms[roomId]) return;
-    
+
     rooms[roomId].videoParticipants = rooms[roomId].videoParticipants.filter(id => id !== peerId);
     socket.to(roomId).emit("user-left-video", { peerId, nickname: user.nickname });
   });
@@ -1132,7 +1136,7 @@ io.on("connection", async (socket) => {
     const user = users[socket.id];
     if (user) {
       const { roomId, nickname, role } = user;
-      
+
       if (rooms[roomId]) {
         if (role === "patient") {
           rooms[roomId].patient = null;
@@ -1141,7 +1145,7 @@ io.on("connection", async (socket) => {
           rooms[roomId].doctor = null;
           rooms[roomId].doctorAvatar = null;
         }
-        
+
         io.to(roomId).emit("user-left", {
           nickname,
           role,
@@ -1149,7 +1153,7 @@ io.on("connection", async (socket) => {
           doctor: rooms[roomId].doctor
         });
       }
-      
+
       delete users[socket.id];
       console.log(`${nickname} disconnected`);
     }

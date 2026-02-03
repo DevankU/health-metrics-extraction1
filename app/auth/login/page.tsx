@@ -1,8 +1,6 @@
 'use client'
 
-import React from "react"
-
-import { createClient } from '@/lib/supabase/client'
+import React, { useState } from "react"
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -15,10 +13,10 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { useAuth } from '@/contexts/AuthContext'
 
 // Doctor email - this user is always assigned as Doctor
-const DOCTOR_EMAIL = 'devanku411@gmail.com'
+const DOCTOR_EMAIL = 'doctor@demo.com'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -26,21 +24,15 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const router = useRouter()
+  const { login } = useAuth()
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-    const supabase = createClient()
     setIsLoading(true)
     setError(null)
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
-      if (error) {
-        throw error
-      }
+      await login(email, password)
       router.push('/chat')
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : 'An error occurred')
@@ -49,7 +41,7 @@ export default function LoginPage() {
     }
   }
 
-  const isDoctor = email.toLowerCase() === DOCTOR_EMAIL.toLowerCase() || email.toLowerCase() === 'doctor@demo.com'
+  const isDoctor = email.toLowerCase().includes('doctor')
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#FFFAF8] via-[#FFF5F2] to-[#FFEBE5] flex items-center justify-center p-4">
@@ -64,7 +56,7 @@ export default function LoginPage() {
             <h1 className="text-3xl font-bold text-[#2D3436] tracking-tight">ArogyaMitra</h1>
             <p className="text-[#636E72] font-medium mt-1">Secure Medical Consultation</p>
           </div>
-          
+
           <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-4">
             <div className="flex items-start gap-3">
               <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -79,7 +71,7 @@ export default function LoginPage() {
               </div>
             </div>
           </div>
-          
+
           <Card className="border-0 shadow-xl">
             <CardHeader className="space-y-1">
               <CardTitle className="text-2xl text-[#2D3436]">Welcome Back</CardTitle>
@@ -123,9 +115,9 @@ export default function LoginPage() {
                       {error}
                     </div>
                   )}
-                  <Button 
-                    type="submit" 
-                    className="w-full h-12 bg-[#FFAB91] hover:bg-[#FF9A7B] text-white rounded-xl font-bold text-base shadow-lg shadow-[#FFAB91]/30" 
+                  <Button
+                    type="submit"
+                    className="w-full h-12 bg-[#FFAB91] hover:bg-[#FF9A7B] text-white rounded-xl font-bold text-base shadow-lg shadow-[#FFAB91]/30"
                     disabled={isLoading}
                   >
                     {isLoading ? 'Signing in...' : 'Sign In'}
@@ -143,7 +135,7 @@ export default function LoginPage() {
               </form>
             </CardContent>
           </Card>
-          
+
           <div className="flex items-center justify-center gap-2 text-xs text-[#636E72]/70">
             <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />

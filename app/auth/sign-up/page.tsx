@@ -1,8 +1,6 @@
 'use client'
 
-import React from "react"
-
-import { createClient } from '@/lib/supabase/client'
+import React, { useState } from "react"
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -15,10 +13,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useState } from 'react'
-
-// Doctor email - this user is always assigned as Doctor
-const DOCTOR_EMAIL = 'devanku411@gmail.com'
+import { useAuth } from '@/contexts/AuthContext'
 
 export default function SignUpPage() {
   const [fullName, setFullName] = useState('')
@@ -29,10 +24,10 @@ export default function SignUpPage() {
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const router = useRouter()
+  const { register } = useAuth()
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault()
-    const supabase = createClient()
     setIsLoading(true)
     setError(null)
 
@@ -49,26 +44,8 @@ export default function SignUpPage() {
     }
 
     try {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            full_name: fullName,
-            role: role,
-            avatar_url: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(fullName)}&backgroundColor=${role === 'doctor' ? '10b981' : '3b82f6'}`,
-          },
-        },
-      })
-      if (error) throw error
-      
-      // Direct sign in if session exists (email confirmation disabled)
-      if (data.session) {
-        router.push('/chat')
-      } else {
-         // Fallback - should not happen if auto-confirm is enabled
-        router.push('/auth/login')
-      }
+      await register(email, password, role)
+      router.push('/chat')
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : 'An error occurred')
     } finally {
@@ -89,7 +66,7 @@ export default function SignUpPage() {
             <h1 className="text-3xl font-bold text-[#2D3436] tracking-tight">ArogyaMitra</h1>
             <p className="text-[#636E72] font-medium mt-1">Create Your Account</p>
           </div>
-          
+
           <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-4">
             <div className="flex items-start gap-3">
               <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -105,7 +82,7 @@ export default function SignUpPage() {
               </div>
             </div>
           </div>
-          
+
           <Card className="border-0 shadow-xl">
             <CardHeader className="space-y-1">
               <CardTitle className="text-2xl text-[#2D3436]">Sign Up</CardTitle>
@@ -140,11 +117,11 @@ export default function SignUpPage() {
                       className="h-12 rounded-xl border-stone-200 focus:border-[#FFAB91] focus:ring-[#FFAB91]/20"
                     />
                   </div>
-                  
+
                   <div className="grid gap-2">
                     <Label className="text-[#2D3436] font-semibold">I am a</Label>
                     <div className="grid grid-cols-2 gap-3">
-                      <div 
+                      <div
                         onClick={() => setRole('patient')}
                         className={`cursor-pointer border rounded-xl p-3 flex flex-col items-center gap-2 transition-all ${role === 'patient' ? 'bg-blue-50 border-blue-500 ring-2 ring-blue-200' : 'bg-white border-stone-200 hover:border-blue-200'}`}
                       >
@@ -157,8 +134,8 @@ export default function SignUpPage() {
                           Patient
                         </span>
                       </div>
-                      
-                      <div 
+
+                      <div
                         onClick={() => setRole('doctor')}
                         className={`cursor-pointer border rounded-xl p-3 flex flex-col items-center gap-2 transition-all ${role === 'doctor' ? 'bg-emerald-50 border-emerald-500 ring-2 ring-emerald-200' : 'bg-white border-stone-200 hover:border-emerald-200'}`}
                       >
@@ -201,9 +178,9 @@ export default function SignUpPage() {
                       {error}
                     </div>
                   )}
-                  <Button 
-                    type="submit" 
-                    className="w-full h-12 bg-[#FFAB91] hover:bg-[#FF9A7B] text-white rounded-xl font-bold text-base shadow-lg shadow-[#FFAB91]/30 mt-2" 
+                  <Button
+                    type="submit"
+                    className="w-full h-12 bg-[#FFAB91] hover:bg-[#FF9A7B] text-white rounded-xl font-bold text-base shadow-lg shadow-[#FFAB91]/30 mt-2"
                     disabled={isLoading}
                   >
                     {isLoading ? 'Creating account...' : 'Create Account'}
@@ -221,7 +198,7 @@ export default function SignUpPage() {
               </form>
             </CardContent>
           </Card>
-          
+
           <div className="flex items-center justify-center gap-2 text-xs text-[#636E72]/70">
             <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
