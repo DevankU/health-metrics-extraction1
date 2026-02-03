@@ -48,9 +48,9 @@ app.get('/users', (req, res) => {
 
 // CREATE user
 app.post('/users', (req, res) => {
-    const { email, password_hash, role, full_name, avatar_url } = req.body;
+    const { email, password, role, full_name, avatar_url } = req.body;
 
-    if (!email || !password_hash || !role) {
+    if (!email || !password || !role) {
         return res.status(400).json({ error: 'Missing fields' });
     }
 
@@ -62,7 +62,7 @@ app.post('/users', (req, res) => {
     const newUser = {
         id: Date.now().toString(),
         email,
-        password_hash,
+        password,
         role,
         full_name: full_name || email.split('@')[0],
         avatar_url,
