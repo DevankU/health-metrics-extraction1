@@ -63,6 +63,17 @@ const peerServer = ExpressPeerServer(server, {
 });
 app.use("/peerjs", peerServer);
 
+// ============ HEALTH CHECK ENDPOINT ============
+// IMPORTANT: Must be placed BEFORE CORS middleware so ALB health checks work
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    service: 'arogyamitra-backend'
+  });
+});
+
 // ============ SECURITY MIDDLEWARE ============
 // Helmet - Security headers (XSS protection, clickjacking prevention, etc.)
 app.use(helmet({
@@ -113,16 +124,6 @@ app.use('/upload', apiLimiter);
 app.use(express.json());
 app.use(express.static(path.resolve("./public")));
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
-
-// ============ HEALTH CHECK ENDPOINT ============
-app.get('/health', (req, res) => {
-  res.status(200).json({
-    status: 'healthy',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    service: 'arogyamitra-backend'
-  });
-});
 
 // Configure file upload
 const storage = multer.diskStorage({
