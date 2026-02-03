@@ -84,8 +84,8 @@ app.use(helmet({
 // CORS - Restrict to allowed origins only
 app.use(cors({
   origin: function(origin, callback) {
-    // Allow requests with no origin (mobile apps, curl, etc.) in development
-    if (!origin && process.env.NODE_ENV !== 'production') {
+    // Allow requests with no origin (health checks, server-to-server, mobile apps)
+    if (!origin) {
       return callback(null, true);
     }
     if (ALLOWED_ORIGINS.includes(origin) || ALLOWED_ORIGINS.includes('*')) {
@@ -728,6 +728,29 @@ app.get("/api/doctor-rooms", (req, res) => {
     }));
   
   res.json({ rooms: doctorRooms });
+});
+
+// Get patient's rooms (rooms where they are invited)
+app.get("/api/patient-rooms", (req, res) => {
+  const { email } = req.query;
+  
+  if (!email) {
+    return res.status(400).json({ error: "Email is required" });
+  }
+  
+  // Return rooms where this email is the invited patient
+  const patientRooms = Object.entries(roomInvitations)
+    .filter(([_, inv]) => inv.patientEmail === email?.toLowerCase())
+    .map(([hash, inv]) => ({
+      hash,
+      roomId: inv.roomId,
+      doctorEmail: inv.doctorEmail,
+      createdAt: inv.createdAt,
+      isDoctorOnline: rooms[inv.roomId]?.doctor !== null,
+      inviteLink: `/chat/${hash}`
+    }));
+  
+  res.json({ rooms: patientRooms });
 });
 
 // Delete room (Doctor only)
